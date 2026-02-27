@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GRITQUEST: Escape from Detention</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+<style>
+body { margin:0; background:black; }
+canvas { display:block; margin:auto; touch-action:none; }
+button { position:absolute; top:10px; left:10px; z-index:10; }
+</style>
+</head>
+<body>
+
+<script>
+// ---- COLORS / Base64 placeholder sprites ----
+const COLORS = {
+    player:0xff0000,   // red
+    zombie:0x0000ff,   // blue
+    grit:0xffff00,     // yellow
+    wall:0x555555,     // gray
+    floor:0x87ceeb,    // light blue
+    woods:0x228B22     // green
+};
+
+// ---- GLOBAL STATS ----
+let playerStats = { grit:0, level:1, health:5 };
+let detentionEnd=0;
+
+// ---- TILEMAPS ----
+const SCHOOL_LAYOUT = [
+    "WWWWWWWWWWWW",
+    "W..........W",
+    "W..GG..Z...W",
+    "W....P.....W",
+    "W..........W",
+    "W..Z.......W",
+    "WWWWWWWWWWWW"
+];
+
+// ---- OVERWORLD SCENE ----
+class OverworldScene extends Phaser.Scene {
+    constructor(){ super("OverworldScene"); }
+    create(){
+        if(this.woodsButton){ this.woodsButton.remove(); this.woodsButton=null; }
+
+        this.tileSize=40;
+        this.player=null;
+        this.zombies=[];
+        this.grits=[];
+        this.walls=[];
+
+        // Draw map
+        for(let y=0;y<SCHOOL_LAYOUT.length;y++){
+            for(let x=0;x<SCHOOL_LAYOUT[y].length;x++){
+                let cell=SCHOOL_LAYOUT[y][x];
+                let px=x*this.tileSize+this.tileSize/2;
+                let py=y*this.tileSize+this.tileSize/2;
+                if(cell=="W"){
+                    let wall=this.add.rectangle(px,py,this.tileSize,this.tileSize,COLORS.wall);
+                    this.physics.add.existing(wall,true); 
+                    this.walls.push(wall);
+                } else {
+                    this.add.rectangle(px,py,this.tileSize,this.tileSize,COLORS.floor);
+                    if(cell=="P"){
+                        this.player=this.physics.add.sprite(px,py,"").setTint(COLORS.player).setDisplaySize(this.tileSize-4,this.tileSize-4);
+                    }
+                    if(cell=="Z"){
+                        let z=this.physics.add.sprite(px,py,"").setTint(COLORS.zombie).setDisplaySize(this.tileSize-4,this.tileSize-4);
+                        z.setVelocity(50,50).setCollideWorldBounds(true).setBounce(1);
+                        this.zombies.push(z);
+                    }
+                    if(cell=="G"){
+                        let g=this.physics.add.sprite(px,py,"").setTint(COLORS.grit).setDisplaySize(this.tileSize/2,this.tileSize/2);
+                        this.grits.push(g);
+                    }
+                }
+            }
+        }
+
+        // UI
+        this.gritText=this.add.text(10,10,"Grit: "+playerStats.grit,{fontSize:"12px",fill:"#000"});
+        this.levelText=this.add.text(10,25,"Level: "+playerStats.level,{fontSize:"12px",fill:"#000"});
+        this.healthText=this.add.text(10,40,"Health: "+playerStats.health,{fontSize:"12px",fill:"#000"});
+        this.zombieText=this.add.text(10,55,"Zombie Meter: 0",{fontSize:"12px",fill:"#000"});
+
+        // Controls
+        this.attackCooldown=false;
+        this.moveTarget=null;
+        this.zombieMeter=0;
+
+        this.input.on('pointerdown',pointer=>{
+            this.moveTarget={x:pointer.x,y:pointer.y};
+            if(!this.attackCooldown) this.attack();
+        });
+
+        // Button to go to Woods
+        let btn = document.createElement("button");
+        btn.innerText = "Go to Woods";
+        btn.onclick=()=>{ this.scene.start("WoodsScene"); };
+        document.body.appendChild(btn);
+        this.woodsButton=btn;
+    }
+
+    update(){
+        if(this.moveTarget){
+            const dx=this.moveTarget.x-this.player.x;
+            const dy=this.moveTarget.y-this.player.y;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+            const speed=120;
+            if(dist>5){ this.player.setVelocityX((dx/dist)*speed); this.player.setVelocityY((dy/dist)*speed); }
+            else{ this.player.setVelocity(0); this.moveTarget=null; }
+        } else this.player.setVelocity(0);
+
+        this.zombieMeter+=0.02;
+        this.zombieText.setText("Zombie Meter: "+Math.floor(this.zombieMeter));
+        if(this.zombieMeter>=100) this.scene.start("DetentionScene");
+
+        // Collisions with grits
+        this.grits.forEach((g,index)=>{
+            if(Phaser.Math.Distance.Between(g.x,g.y,this.player.x,this.player.y)<20){
+                playerStats.grit+=10;
+                this.gritText.setText("Grit: "+playerStats.grit);
+                g.destroy();
+                this.grits.splice(index,1);
+            }
+        });
+
+        // Collisions with zombies
+        this.zombies.forEach((z,index)=>{
+            if(Phaser.Math.Distance.Between(z.x,z.y,this.player.x,this.player.y)<20){
+                playerStats.health--;
+                this.healthText.setText("Health: "+playerStats.health);
+                if(playerStats.health<=0) this.scene.start("DetentionScene");
+            }
+        });
+    }
+
+    attack(){
+        this.attackCooldown=true;
+        this.zombies.forEach((z,index)=>{
+            if(Phaser.Math.Distance.Between(z.x,z.y,this.player.x,this.player.y)<40){
+                z.destroy();
+                this.zombies.splice(index,1);
+            }
+        });
+        this.time.delayedCall(500,()=>{ this.attackCooldown=false; });
+    }
+
+    shutdown(){ if(this.woodsButton){ this.woodsButton.remove(); this.woodsButton=null; } }
+}
+
+// ---- WOODS SCENE ----
+class WoodsScene extends Phaser.Scene{
+    constructor(){ super("WoodsScene"); }
+    create(){
+        if(this.returnButton){ this.returnButton.remove(); this.returnButton=null; }
+
+        this.add.rectangle(240,135,480,270,COLORS.woods);
+
+        this.player=this.physics.add.sprite(240,135,"").setTint(COLORS.player).setDisplaySize(30,30);
+        this.moveTarget=null;
+
+        // Grabs
+        this.grits=[];
+        for(let i=0;i<5;i++){
+            let g=this.physics.add.sprite(50+Math.random()*380,50+Math.random()*180,"").setTint(COLORS.grit).setDisplaySize(15,15);
+            this.grits.push(g);
+        }
+
+        this.gritText=this.add.text(10,10,"Grit: "+playerStats.grit,{fontSize:"12px",fill:"#fff"});
+
+        // Button to return
+        let btn = document.createElement("button");
+        btn.innerText = "Return to School";
+        btn.onclick=()=>{ this.scene.start("OverworldScene"); };
+        document.body.appendChild(btn);
+        this.returnButton=btn;
+
+        this.input.on('pointerdown',pointer=>{ this.moveTarget={x:pointer.x,y:pointer.y}; });
+    }
+
+    update(){
+        if(this.moveTarget){
+            const dx=this.moveTarget.x-this.player.x;
+            const dy=this.moveTarget.y-this.player.y;
+            const dist=Math.sqrt(dx*dx+dy*dy);
+            const speed=120;
+            if(dist>5){ this.player.setVelocityX((dx/dist)*speed); this.player.setVelocityY((dy/dist)*speed); }
+            else{ this.player.setVelocity(0); this.moveTarget=null; }
+        } else this.player.setVelocity(0);
+
+        this.grits.forEach((g,index)=>{
+            if(Phaser.Math.Distance.Between(g.x,g.y,this.player.x,this.player.y)<20){
+                playerStats.grit+=10;
+                this.gritText.setText("Grit: "+playerStats.grit);
+                g.destroy();
+                this.grits.splice(index,1);
+            }
+        });
+    }
+
+    shutdown(){ if(this.returnButton){ this.returnButton.remove(); this.returnButton=null; } }
+}
+
+// ---- DETENTION SCENE ----
+class DetentionScene extends Phaser.Scene{
+    constructor(){ super("DetentionScene"); }
+    create(){
+        if(!detentionEnd) detentionEnd=Date.now()+180000;
+        this.detentionText=this.add.text(100,120,"",{fontSize:"16px",fill:"#000"});
+        this.time.addEvent({
+            delay:1000, loop:true,
+            callback:()=>{
+                let remaining=Math.ceil((detentionEnd-Date.now())/1000);
+                if(remaining<=0){ detentionEnd=0; this.scene.start("OverworldScene"); }
+                else this.detentionText.setText("Detention: "+remaining+"s");
+            }
+        });
+    }
+}
+
+// ---- PHASER CONFIG ----
+const config = {
+    type: Phaser.AUTO,
+    width:480,
+    height:270,
+    pixelArt:true,
+    physics:{default:"arcade",arcade:{debug:false}},
+    scene:[OverworldScene,WoodsScene,DetentionScene]
+};
+new Phaser.Game(config);
+
+</script>
+
+</body>
+</html>
