@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Grit Quest - Pixel Art Version</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+<style>
+body {margin:0; background:black; touch-action:none;}
+canvas {display:block; margin:auto;}
+button {position:absolute; font-size:24px; opacity:0.5;}
+#up {top:70%; left:45%;}
+#down {top:85%; left:45%;}
+#left {top:77%; left:35%;}
+#right {top:77%; left:55%;}
+#shoot {top:77%; right:10%;}
+</style>
+</head>
+<body>
+
+<!-- Mobile Buttons -->
+<button id="up">↑</button><button id="down">↓</button>
+<button id="left">←</button><button id="right">→</button><button id="shoot">⚡</button>
+
+<script>
+/* ===== AUDIO ===== */
+let audioCtx;
+function initAudio(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }
+function beep(freq,dur,type="square",vol=0.1){
+  if(!audioCtx) return;
+  let osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+  osc.type=type; osc.frequency.value=freq; g.gain.value=vol;
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime+dur);
+}
+
+/* ===== PIXEL ART DATA ===== */
+const palette={ ".":null, R:"#ff5555", B:"#0000ff", H:"#ffff00", G:"#228B22", W:"#ffffff", L:"#888888", Y:"#ffcc00", B2:"#bb0000" };
+
+// Player (kid with backpack & hat)
+const playerArt = { /* up, down, left, right frames same as previous snippet */ };
+// Zombie
+const zombieArt=[ /* 2 frames hall monitor same as previous snippet */ ];
+// Floor, lockers, grit, bullet
+const tileArt={ /* floor and locker arrays */ };
+const gritArt=[ /* 2 frames */ ];
+const bulletArt=[ /* 2 frames */ ];
+
+let scene;
+
+// Texture generation helper
+function generateTextureFromArt(key, art, width, height){
+  const rt = scene.make.renderTexture({width,height,add:false});
+  const pixelSize = 2;
+  art.forEach((row,y)=>{
+    row.split("").forEach((c,x)=>{
+      const col=palette[c];
+      if(col) rt.fill(col,1,x*pixelSize,y*pixelSize,pixelSize,pixelSize);
+    });
+  });
+  rt.saveTexture(key);
+}
+
+/* ===== TITLE SCENE ===== */
+class TitleScene extends Phaser.Scene{
+  constructor(){super("TitleScene");}
+  create(){
+    this.add.rectangle(400,300,800,600,0x000022);
+    this.add.text(200,180,"GRIT QUEST",{fontSize:"64px",fill:"#fff"});
+    this.add.text(240,300,"Press SPACE / Tap ⚡ to Start",{fontSize:"28px",fill:"#ffff00"});
+    const start=()=>{
+      initAudio(); this.scene.start("GameScene");
+    };
+    this.input.keyboard.once('keydown-SPACE',start);
+    document.getElementById('shoot').addEventListener('touchstart',start,{once:true});
+  }
+}
+
+/* ===== GAME SCENE ===== */
+class GameScene extends Phaser.Scene{
+  constructor(){super("GameScene");}
+  preload(){ scene=this; } // textures generated in create()
+  create(){
+    scene=this;
+    // Generate textures
+    for(let dir in playerArt) playerArt[dir].forEach((f,i)=>generateTextureFromArt(`player_${dir}_${i}`,f,16,16));
+    zombieArt.forEach((f,i)=>generateTextureFromArt(`zombie_${i}`,f,16,16));
+    Object.keys(tileArt).forEach(k=>generateTextureFromArt(k,tileArt[k],32,32));
+    gritArt.forEach((f,i)=>generateTextureFromArt(`grit_${i}`,f,16,16));
+    bulletArt.forEach((f,i)=>generateTextureFromArt(`bullet_${i}`,f,6,6));
+
+    /* ===== TILEMAP ===== */
+    this.tiles=[];
+    for(let y=0;y<600;y+=32) for(let x=0;x<800;x+=32) this.tiles.push(this.add.image(x+16,y+16,'floor'));
+    this.obstacles=this.physics.add.staticGroup();
+    for(let i=0;i<20;i++) this.obstacles.create(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),'locker');
+
+    /* ===== PLAYER ===== */
+    this.player=this.physics.add.sprite(400,300,'player_down_0'); this.player.setCollideWorldBounds(true);
+    this.lastDir='down'; this.playerFrame=0; this.frameTimer=0; this.inDetention=false;
+
+    /* ===== ZOMBIES ===== */
+    this.zombies=this.physics.add.group(); this.spawnZombies(3);
+
+    /* ===== BULLETS ===== */
+    this.bullets=this.physics.add.group();
+
+    /* ===== GRIT ===== */
+    this.grit=this.physics.add.sprite(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),'grit_0');
+    this.gritFrame=0;
+
+    /* ===== STATS ===== */
+    this.score=0; this.wave=1; this.health=3;
+    this.highScore=localStorage.getItem('gritHighScore')||0;
+    this.scoreText=this.add.text(20,20,"Score:0",{fontSize:"20px",fill:"#fff"});
+    this.waveText=this.add.text(20,50,"Wave:1",{fontSize:"20px",fill:"#ffff00"});
+    this.healthText=this.add.text(20,80,"Health:3",{fontSize:"20px",fill:"#ff4444"});
+    this.highScoreText=this.add.text(600,20,"High:"+this.highScore,{fontSize:"20px",fill:"#00ffff"});
+
+    /* ===== COLLISIONS ===== */
+    this.physics.add.overlap(this.player,this.grit,()=>{if(!this.inDetention){beep(880,0.1);this.score+=10;this.scoreText.setText("Score:"+this.score);this.grit.setPosition(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550));}});
+    this.physics.add.overlap(this.player,this.zombies,(p,z)=>{if(!this.inDetention)this.sendToDetention();});
+    this.physics.add.overlap(this.bullets,this.zombies,(b,z)=>{beep(660,0.05);b.destroy();z.destroy();this.score+=5;this.scoreText.setText("Score:"+this.score);if(this.zombies.countActive(true)===0){this.wave++;this.waveText.setText("Wave:"+this.wave);this.spawnZombies(2+this.wave);}});
+    this.physics.add.collider(this.player,this.obstacles);
+    this.physics.add.collider(this.zombies,this.obstacles);
+
+    /* ===== CONTROLS ===== */
+    this.cursors=this.input.keyboard.createCursorKeys();
+    this.wasd=this.input.keyboard.addKeys({w:'W',a:'A',s:'S',d:'D'});
+    const dirButtons={up:()=>{this.lastDir='up'; this.movePlayer(0,-1);},down:()=>{this.lastDir='down'; this.movePlayer(0,1);},left:()=>{this.lastDir='left'; this.movePlayer(-1,0);},right:()=>{this.lastDir='right'; this.movePlayer(1,0);}};
+    ['up','down','left','right'].forEach(id=>document.getElementById(id).addEventListener('touchstart',()=>dirButtons[id]()));
+    document.getElementById('shoot').addEventListener('touchstart',()=>this.shoot());
+  }
+
+  spawnZombies(count){ for(let i=0;i<count;i++){ let z=this.zombies.create(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),'zombie_0'); z.setCollideWorldBounds(true); z.speed=30+Math.random()*20; z.frameIndex=0; } }
+  movePlayer(x,y){ if(this.inDetention) return; this.player.setVelocity(x*150,y*150); }
+  shoot(){ if(this.inDetention) return; beep(440,0.05); let b=this.bullets.create(this.player.x,this.player.y,'bullet_0'); b.setCollideWorldBounds(true); b.body.onWorldBounds=true; const speed=250; switch(this.lastDir){case 'up':b.setVelocity(0,-speed);break;case 'down':b.setVelocity(0,speed);break;case 'left':b.setVelocity(-speed,0);break;case 'right':b.setVelocity(speed,0);break;} b.body.world.on('worldbounds',function(body){if(body.gameObject===b)b.destroy();}); }
+  sendToDetention(){ this.inDetention=true; this.player.setVisible(false); this.player.setVelocity(0,0); this.health--; this.healthText.setText("Health:"+this.health); this.add.text(300,300,"DETENTION!",{fontSize:"32px",fill:"#ff0000"}); if(this.health<=0){if(this.score>this.highScore)localStorage.setItem('gritHighScore',this.score);this.scene.start("GameOverScene",{score:this.score}); return;} this.time.delayedCall(60000,()=>{this.inDetention=false; this.player.setVisible(true); this.player.setPosition(400,300);},[],this);}
+  update(){
+    let vx=0,vy=0;
+    if(!this.inDetention){
+      if(this.cursors.left.isDown||this.wasd.a.isDown){vx=-150; this.lastDir='left';}
+      if(this.cursors.right.isDown||this.wasd.d.isDown){vx=150; this.lastDir='right';}
+      if(this.cursors.up.isDown||this.wasd.w.isDown){vy=-150; this.lastDir='up';}
+      if(this.cursors.down.isDown||this.wasd.s.isDown){vy=150; this.lastDir='down';}
+      this.player.setVelocity(vx,vy);
+
+      this.frameTimer+=this.game.loop.delta;
+      if(this.frameTimer>200){ this.playerFrame=(this.playerFrame+1)%2; this.frameTimer=0; }
+      this.player.setTexture('player_'+this.lastDir+'_'+this.playerFrame);
+    }
+
+    this.gritFrame=(this.gritFrame+1)%2; this.grit.setTexture('grit_'+this.gritFrame);
+
+    this.zombies.children.iterate(z=>{
+      let dx=this.player.x-z.x, dy=this.player.y-z.y;
+      let dist=Math.sqrt(dx*dx+dy*dy); let spd=dist<80? z.speed*1.3 : z.speed;
+      this.physics.moveToObject(z,this.player,spd);
+      z.frameIndex=(z.frameIndex+1)%2; z.setTexture('zombie_'+z.frameIndex);
+    });
+  }
+}
+
+/* ===== GAME OVER ===== */
+class GameOverScene extends Phaser.Scene{
+  constructor(){super("GameOverScene");}
+  create(data){
+    this.add.rectangle(400,300,800,600,0x220000);
+    this.add.text(250,200,"GAME OVER",{fontSize:"64px",fill:"#ff0000"});
+    this.add.text(290,300,"Final Score:"+data.score,{fontSize:"28px",fill:"#fff"});
+    this.add.text(240,380,"Press SPACE / Tap ⚡ to Restart",{fontSize:"28px",fill:"#ffff00"});
+    this.input.keyboard.once('keydown-SPACE',()=>this.scene.start("TitleScene"));
+    document.getElementById('shoot').addEventListener('touchstart',()=>this.scene.start("TitleScene"),{once:true});
+  }
+}
+
+/* ===== CONFIG ===== */
+const config={ type:Phaser.AUTO, width:800, height:600, pixelArt:true, physics:{default:'arcade'}, scene:[TitleScene,GameScene,GameOverScene] };
+new Phaser.Game(config);
+</script>
+</body>
+</html>
