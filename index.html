@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Grit Quest - SNES Style</title>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+<style>
+body {margin:0; background:black; touch-action:none;}
+canvas {display:block; margin:auto;}
+button {position:absolute; font-size:24px; opacity:0.5;}
+#up {top:70%; left:45%;}
+#down {top:85%; left:45%;}
+#left {top:77%; left:35%;}
+#right {top:77%; left:55%;}
+#shoot {top:77%; right:10%;}
+</style>
+</head>
+<body>
+<!-- Mobile Buttons -->
+<button id="up">↑</button><button id="down">↓</button>
+<button id="left">←</button><button id="right">→</button><button id="shoot">⚡</button>
+
+<script>
+/* ================= AUDIO ================= */
+let audioCtx;
+function initAudio(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }
+function beep(freq,dur,type="square",vol=0.1){
+  if(!audioCtx) return;
+  let osc=audioCtx.createOscillator(),g=audioCtx.createGain();
+  osc.type=type; osc.frequency.value=freq; g.gain.value=vol;
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime+dur);
+}
+
+/* ================= TITLE SCENE ================= */
+class TitleScene extends Phaser.Scene{
+  constructor(){ super("TitleScene"); }
+  preload(){
+    // Embedded base64 images
+    this.load.image('player_title','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAC1ElEQVR4nJ2WvYsUQRDFf292jjsFzc1EQUENTY1M1X/FwP/B1MTY4EzMDcXE1EgwEeEQg0NQMBBl8Xb7GfT058ztHfYduz398epV1auahTREP+Yr/zEmkOt3Dh3igoTsYBssrdJJh7BFiJUxRpIk2wCyJiiZZj6SphLGEUuysLHYZi6rQWCzlUGKoIoPIhIyDCR8TGBM0wECBkz6wkomBQalCeC4O9EyRHhwpIEixFiiZSe4eL+OZAaNG5ISB5ftiYoNiBB5jXTD+XwmO6HQmM9xKKu1KIz//Ppw9PnZSH3MNCj9pCOi5niCl5D0/fjN8dfDsNnmHBSPz6VOqSWk7FWE0TggrcZhSIQck7BIXwvxMFjtI8YO2LYd4n9WkVFxM7nhxegY5MWwTexLxoYhGVD6rGPVGJu5VWm3jCyMYA1Cyiqqy6wWO7Prrh1tQFU/afz0JWy326yiEGNaQdboFdOZBtw/Cbh44dJ6Pf7dhOn4tVuHOIB9SuBngKdpbVqX9PPHuwcP76Vmd/slMeupINxdSu1mwV5zVCL+DShoGIe8U016dk5xPTNAlH4S25HrHHScXDIqYU+ts8PUQrKikA0mdB6ouq+OnKc7nRNCSs6VrVwLyQMHZkOaK32HAJrkJ8mSPFB2pezRTHaOqg0kQ9NjbnbGwbFjnaXTnXbiu7SstO+Dhf5btQzO40/KZQxJnYOZyPscz1DSeq8qgVfaMipshtJNlxDVXFxE71xWlKnWPnrx+NX9RynJaiLXU5rhUr0AZj4acDj5duPm5ZPf+2O57vxVaqK1VtvQUuMoBWH09Pn67ccnOQeL/bkbu0q4OWYOVndfv7+6f7Bf6uCUl1SHeaaGY9OytXewd4XNpsi0/A48nXVnTp1LbRINVL2o4riwUn2qWTdy04W6822hSVQ/F6mqa56heMotI4GlAbCje1ULijJub6jDXJ43rTRXciQR/gHeWouVffLfbgAAAABJRU5ErkJggg==');
+    this.load.image('zombie_title','data:image/png;base64,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');
+  }
+  create(){
+    this.add.rectangle(400,300,800,600,0x2222aa);
+    this.add.text(180,150,"GRIT QUEST",{fontSize:"64px",fill:"#ffffff"});
+    this.add.text(220,250,"Press SPACE / Tap ⚡ to Start",{fontSize:"28px",fill:"#ffff00"});
+    this.add.image(300,400,'player_title').setScale(3);
+    this.add.image(500,400,'zombie_title').setScale(3);
+
+    const start=()=>{
+      initAudio();
+      this.scene.start("GameScene");
+    };
+    this.input.keyboard.once('keydown-SPACE',start);
+    document.getElementById('shoot').addEventListener('touchstart',start,{once:true});
+  }
+}
+
+/* ================= GAME SCENE ================= */
+class GameScene extends Phaser.Scene{
+  constructor(){ super("GameScene"); }
+  preload(){
+    // Embedded base64 images
+    this.load.image('player_down','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAC1ElEQVR4nJ2WvYsUQRDFf292jjsFzc1EQUENTY1M1X/FwP/B1MTY4EzMDcXE1EgwEeEQg0NQMBBl8Xb7GfT058ztHfYduz398epV1auahTREP+Yr/zEmkOt3Dh3igoTsYBssrdJJh7BFiJUxRpIk2wCyJiiZZj6SphLGEUuysLHYZi6rQWCzlUGKoIoPIhIyDCR8TGBM0wECBkz6wkomBQalCeC4O9EyRHhwpIEixFiiZSe4eL+OZAaNG5ISB5ftiYoNiBB5jXTD+XwmO6HQmM9xKKu1KIz//Ppw9PnZSH3MNCj9pCOi5niCl5D0/fjN8dfDsNnmHBSPz6VOqSWk7FWE0TggrcZhSIQck7BIXwvxMFjtI8YO2LYd4n9WkVFxM7nhxegY5MWwTexLxoYhGVD6rGPVGJu5VWm3jCyMYA1Cyiqqy6wWO7Prrh1tQFU/afz0JWy326yiEGNaQdboFdOZBtw/Cbh44dJ6Pf7dhOn4tVuHOIB9SuBngKdpbVqX9PPHuwcP76Vmd/slMeupINxdSu1mwV5zVCL+DShoGIe8U016dk5xPTNAlH4S25HrHHScXDIqYU+ts8PUQrKikA0mdB6ouq+OnKc7nRNCSs6VrVwLyQMHZkOaK32HAJrkJ8mSPFB2pezRTHaOqg0kQ9NjbnbGwbFjnaXTnXbiu7SstO+Dhf5btQzO40/KZQxJnYOZyPscz1DSeq8qgVfaMipshtJNlxDVXFxE71xWlKnWPnrx+NX9RynJaiLXU5rhUr0AZj4acDj5duPm5ZPf+2O57vxVaqK1VtvQUuMoBWH09Pn67ccnOQeL/bkbu0q4OWYOVndfv7+6f7Bf6uCUl1SHeaaGY9OytXewd4XNpsi0/A48nXVnTp1LbRINVL2o4riwUn2qWTdy04W6822hSVQ/F6mqa56heMotI4GlAbCje1ULijJub6jDXJ43rTRXciQR/gHeWouVffLfbgAAAABJRU5ErkJggg==');
+    this.load.image('zombie','data:image/png;base64,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');
+    this.load.image('grit','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAACZklEQVR4nJWUTWsTQRSGn3XdtMF0qxXQFSY0s2vYoEv6B/AJ1CyygrWFGEUN6wUto0W2sZoU8EBJcqGxEsGkrmC1O2E92/fX89+bnI/MR+fu6k1hT6q3+uMT8X4Htdh8Uaa1a3ZksdL6A3yHjXkANbke1xlnjGCEbfplm5E6vceM80EblxQQN2OYFG6BNqCo0E4o6+FfiZ64S5gSlGb9Dwoqk3D6E5A2BBy/PG7yYqXK7Hg9mQ+R5HWd0yD9tMSPdD1T3MQbk/cpWRyH1G7tB2rPFmHG6KYI3rjkQt2AtjpYwCk/jWgSmZWhK6Omri1rEw1scXzNi96CjpP8IXBvUg7dpTX9ghzPRwY5LoQgCzZKa9lMHs0I3aBM7k2MFZ+wo3R0sRZPlkZr0RMYrZh0nwz+h+gF2h0U0rktgXEr0fQsBvJchP0ChPI74Ch7i5+wsd8UecD4X1FXL0y+IdTRKoQGLh4B0lAPpDQGK2T3kIfxCUlPim6V+4K0avlfhe3V+X8QZ5Z1B7j+gROJeWPhAxTdhc3rWzXwM6ncb9n1jH+0IYXhwNsPiU/HwKFrgpxoy1X2b5Xe2rAt7+zX0tds7iKNTD8v0D9QXoQzqXgIf8a0AAAAASUVORK5CYII=');
+    this.load.image('tile','data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAABfElEQVR4nM2UQQ7CMBBFrz3pCvxAj1C0k2lFFP7JejENChhg+Lch4uvfMZshvNqaM/9ZATZbOL9gA8ET+MdbzI1XY9R3gUFehAAx4wWhcEcFGGJXgIpCh5eBwSENk/8q/1KgiEyNCrD3syQoz2tDi8d5f/OVqEGRyV5kb1+UmlJS5rQw0qhpwN0kWToF6E1kXAoT+EKJRYhIiQqaDEhGjRjYxCFzODgQESEhB0+Qg0A4CwsbI2d0vM8id04FAh3QRIQSKp6FQAAAABJRU5ErkJggg==');
+  }
+  create(){
+    this.tiles=[];
+    for(let y=0;y<600;y+=32) for(let x=0;x<800;x+=32){
+      const t=this.add.image(x+16,y+16,'tile').setOrigin(0.5,0.5);
+      this.tiles.push(t);
+    }
+
+    this.obstacles=this.physics.add.staticGroup();
+    for(let i=0;i<12;i++){
+      this.obstacles.create(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),null).setSize(32,32).setVisible(false);
+    }
+
+    this.player=this.physics.add.sprite(400,300,'player_down');
+    this.player.setCollideWorldBounds(true);
+    this.inDetention=false;
+
+    this.zombies=this.physics.add.group();
+    for(let i=0;i<3;i++){
+      const z=this.zombies.create(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),"zombie");
+      z.speed=40;
+    }
+
+    this.grit=this.physics.add.sprite(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550),"grit");
+
+    this.score=0; this.health=3;
+    this.scoreText=this.add.text(20,20,"Score:0",{fontSize:"20px",fill:"#fff"});
+    this.healthText=this.add.text(20,50,"Health:3",{fontSize:"20px",fill:"#ff4444"});
+
+    this.physics.add.overlap(this.player,this.grit,()=>{
+      if(!this.inDetention){
+        beep(880,0.1);
+        this.score+=10;
+        this.scoreText.setText("Score:"+this.score);
+        this.grit.setPosition(Phaser.Math.Between(50,750),Phaser.Math.Between(50,550));
+      }
+    });
+    this.physics.add.overlap(this.player,this.zombies,()=>{if(!this.inDetention)this.sendToDetention();});
+    this.physics.add.collider(this.player,this.obstacles);
+    this.physics.add.collider(this.zombies,this.obstacles);
+
+    this.cursors=this.input.keyboard.createCursorKeys();
+    this.wasd=this.input.keyboard.addKeys({w:'W',a:'A',s:'S',d:'D'});
+
+    this.mobileDir={up:false,down:false,left:false,right:false};
+    ['up','down','left','right'].forEach(dir=>{
+      const el=document.getElementById(dir);
+      el.addEventListener('touchstart',()=>this.mobileDir[dir]=true);
+      el.addEventListener('touchend',()=>this.mobileDir[dir]=false);
+    });
+    document.getElementById('shoot').addEventListener('touchstart',()=>beep(440,0.05));
+  }
+
+  sendToDetention(){
+    this.inDetention=true;
+    this.player.setVisible(false);
+    this.player.setVelocity(0,0);
+    this.health--;
+    this.healthText.setText("Health:"+this.health);
+    const text=this.add.text(300,300,"DETENTION!",{fontSize:"32px",fill:"#ff0000"});
+    if(this.health<=0){this.scene.start("GameOverScene",{score:this.score});return;}
+    this.time.delayedCall(60000,()=>{
+      this.inDetention=false;
+      this.player.setVisible(true);
+      this.player.setPosition(400,300);
+      text.destroy();
+    },[],this);
+  }
+
+  update(){
+    if(!this.inDetention){
+      let vx=0,vy=0;
+      if(this.cursors.left.isDown||this.wasd.a.isDown) vx-=1;
+      if(this.cursors.right.isDown||this.wasd.d.isDown) vx+=1;
+      if(this.cursors.up.isDown||this.wasd.w.isDown) vy-=1;
+      if(this.cursors.down.isDown||this.wasd.s.isDown) vy+=1;
+      if(this.mobileDir.left) vx-=1;
+      if(this.mobileDir.right) vx+=1;
+      if(this.mobileDir.up) vy-=1;
+      if(this.mobileDir.down) vy+=1;
+      if(vx!==0 && vy!==0){vx*=Math.SQRT1_2; vy*=Math.SQRT1_2;}
+      this.player.setVelocity(vx*150,vy*150);
+    }
+    this.zombies.children.iterate(z=>{this.physics.moveToObject(z,this.player,z.speed);});
+  }
+}
+
+/* ================= GAME OVER ================= */
+class GameOverScene extends Phaser.Scene{
+  constructor(){ super("GameOverScene"); }
+  create(data){
+    this.add.rectangle(400,300,800,600,0x220000);
+    this.add.text(250,200,"GAME OVER",{fontSize:"64px",fill:"#ff0000"});
+    this.add.text(290,300,"Final Score:"+data.score,{fontSize:"28px",fill:"#fff"});
+    this.add.text(240,380,"Press SPACE / Tap ⚡ to Restart",{fontSize:"28px",fill:"#ffff00"});
+    this.input.keyboard.once('keydown-SPACE',()=>this.scene.start("TitleScene"));
+    document.getElementById('shoot').addEventListener('touchstart',()=>this.scene.start("TitleScene"),{once:true});
+  }
+}
+
+const config={type:Phaser.AUTO,width:800,height:600,pixelArt:true,physics:{default:'arcade'},scene:[TitleScene,GameScene,GameOverScene]};
+new Phaser.Game(config);
+</script>
+</body>
+</html>
